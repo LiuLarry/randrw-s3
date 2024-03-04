@@ -38,8 +38,6 @@ mod datastore;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-pub const PATH_ENV: &'static str = "S3_STORE_CONFIG";
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct S3Config {
     pub endpoint: String,
@@ -111,9 +109,9 @@ async fn put_object(
 }
 
 async fn put_zero_object_api(
-    ctx: Arc<Context>,
     key: String,
     content_len: u64,
+    ctx: Arc<Context>,
 ) -> Response {
     let stream = futures_util::stream::repeat_with(|| Ok([0u8].as_slice()));
 
@@ -135,10 +133,10 @@ async fn put_zero_object_api(
 }
 
 async fn put_object_api(
-    ctx: Arc<Context>,
     key: String,
     content_len: u64,
     body: impl Stream<Item=Result<impl Buf, warp::Error>> + Unpin,
+    ctx: Arc<Context>,
 ) -> Response {
     let res = put_object(
         &ctx,
@@ -251,11 +249,11 @@ async fn update_object(
 }
 
 async fn update_object_api(
-    ctx: Arc<Context>,
     key: String,
     offset: u64,
     content_len: u64,
     body: impl Stream<Item=Result<impl Buf, warp::Error>> + Unpin,
+    ctx: Arc<Context>,
 ) -> Response {
     let res = update_object(
         &ctx,
@@ -408,10 +406,10 @@ async fn get_object_with_ranges(
 }
 
 async fn get_object_with_ranges_api(
-    ctx: Arc<Context>,
     key: String,
     // (start position, length)
-    ranges: Vec<(u64, u64)>
+    ranges: Vec<(u64, u64)>,
+    ctx: Arc<Context>,
 ) -> Response {
     let res = get_object_with_ranges(
         &ctx,
@@ -473,39 +471,29 @@ async fn serve(
 
     let ctx = Arc::new(ctx);
 
-    let put_object = warp::path!("putobject")
+    let put_object = warp::path!("putobject" / String)
         .and(warp::post())
-        .and(with_context(ctx.clone()))
-        .and(warp::path::param::<String>())
-        .and(warp::path::end())
         .and(warp::header::<u64>("content-length"))
         .and(warp::body::stream())
+        .and(with_context(ctx.clone()))
         .then(put_object_api);
 
-    let put_zero_object = warp::path!("putzeroobject")
+    let put_zero_object = warp::path!("putzeroobject" / String / u64)
         .and(warp::post())
         .and(with_context(ctx.clone()))
-        .and(warp::path::param::<String>())
-        .and(warp::path::param::<u64>())
-        .and(warp::path::end())
         .then(put_zero_object_api);
 
-    let update_object = warp::path!("updateobject")
+    let update_object = warp::path!("updateobject" / String / u64)
         .and(warp::post())
-        .and(with_context(ctx.clone()))
-        .and(warp::path::param::<String>())
-        .and(warp::path::param::<u64>())
-        .and(warp::path::end())
         .and(warp::header::<u64>("content-length"))
         .and(warp::body::stream())
+        .and(with_context(ctx.clone()))
         .then(update_object_api);
 
-    let get_object_with_ranges = warp::path!("getobjectwithranges")
+    let get_object_with_ranges = warp::path!("getobjectwithranges" / String)
         .and(warp::get())
-        .and(with_context(ctx))
-        .and(warp::path::param::<String>())
-        .and(warp::path::end())
         .and(warp::body::json::<Vec<(u64, u64)>>())
+        .and(with_context(ctx))
         .then(get_object_with_ranges_api);
 
     let router = put_object
