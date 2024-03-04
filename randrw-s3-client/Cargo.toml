@@ -1,0 +1,15 @@
+[package]
+name = "randrw-s3-client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+bincode = { version = "2.0.0-rc.3" }
+log = "0.4"
+reqwest = { version = "0.11", default-features = false, features = ["stream", "json"] }
+tokio = { version = "1", default-features = false }
+tokio-util = { version = "0.7" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
