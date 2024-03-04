@@ -22,6 +22,3 @@ sscanf = "0.4"
 bincode = { version = "2.0.0-rc.3" }
 log = "0.4"
 log4rs = "1"
-
-[patch.crates-io]
-hyper = { git = "https://github.com/gh-efforts/hyper.git", branch = "0.14.x" }

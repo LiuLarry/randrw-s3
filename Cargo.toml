@@ -4,3 +4,6 @@ members = [
     "randrw-s3-client",
     "randrw-s3-server"
 ]
+
+[patch.crates-io]
+hyper = { git = "https://github.com/gh-efforts/hyper.git", branch = "0.14.x" }
