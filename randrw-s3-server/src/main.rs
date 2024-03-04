@@ -477,6 +477,7 @@ async fn serve(
         .and(warp::post())
         .and(with_context(ctx.clone()))
         .and(warp::path::param::<String>())
+        .and(warp::path::end())
         .and(warp::header::<u64>("content-length"))
         .and(warp::body::stream())
         .then(put_object_api);
@@ -486,6 +487,7 @@ async fn serve(
         .and(with_context(ctx.clone()))
         .and(warp::path::param::<String>())
         .and(warp::path::param::<u64>())
+        .and(warp::path::end())
         .then(put_zero_object_api);
 
     let update_object = warp::path!("updateobject")
@@ -493,6 +495,7 @@ async fn serve(
         .and(with_context(ctx.clone()))
         .and(warp::path::param::<String>())
         .and(warp::path::param::<u64>())
+        .and(warp::path::end())
         .and(warp::header::<u64>("content-length"))
         .and(warp::body::stream())
         .then(update_object_api);
@@ -501,6 +504,7 @@ async fn serve(
         .and(warp::get())
         .and(with_context(ctx))
         .and(warp::path::param::<String>())
+        .and(warp::path::end())
         .and(warp::body::json::<Vec<(u64, u64)>>())
         .then(get_object_with_ranges_api);
 
