@@ -43,6 +43,8 @@ pub async fn put_zero_object(
         .join(key)?
         .join(&data_len.to_string())?;
 
+    println!("path: {}", path);
+
     let resp = CLIENT.post(path)
         .send()
         .await?;
