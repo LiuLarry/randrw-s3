@@ -109,16 +109,16 @@ async fn put_object(
 }
 
 async fn put_zero_object_api(
-    key: String,
-    content_len: u64,
+    key: KeyQuery,
+    data_len_query: DataLenQuery,
     ctx: Arc<Context>,
 ) -> Response {
     let stream = futures_util::stream::repeat_with(|| Ok([0u8].as_slice()));
 
     let res = put_object(
         &ctx,
-        key,
-        content_len,
+        key.key,
+        data_len_query.data_len,
         stream
     ).await;
 
@@ -133,14 +133,14 @@ async fn put_zero_object_api(
 }
 
 async fn put_object_api(
-    key: String,
+    key: KeyQuery,
     content_len: u64,
     body: impl Stream<Item=Result<impl Buf, warp::Error>> + Unpin,
     ctx: Arc<Context>,
 ) -> Response {
     let res = put_object(
         &ctx,
-        key,
+        key.key,
         content_len,
         body
     ).await;
@@ -249,16 +249,16 @@ async fn update_object(
 }
 
 async fn update_object_api(
-    key: String,
-    offset: u64,
+    key: KeyQuery,
+    offset: OffsetQuery,
     content_len: u64,
     body: impl Stream<Item=Result<impl Buf, warp::Error>> + Unpin,
     ctx: Arc<Context>,
 ) -> Response {
     let res = update_object(
         &ctx,
-        key,
-        offset,
+        key.key,
+        offset.offset,
         content_len,
         body
     ).await;
@@ -406,14 +406,14 @@ async fn get_object_with_ranges(
 }
 
 async fn get_object_with_ranges_api(
-    key: String,
+    key: KeyQuery,
     // (start position, length)
     ranges: Vec<(u64, u64)>,
     ctx: Arc<Context>,
 ) -> Response {
     let res = get_object_with_ranges(
         &ctx,
-        key,
+        key.key,
         &ranges
     ).await;
 
@@ -434,6 +434,21 @@ fn with_context(
     ctx: Arc<Context>
 ) -> impl Filter<Extract=(Arc<Context>, ), Error=std::convert::Infallible> + Clone {
     warp::any().map(move || ctx.clone())
+}
+
+#[derive(Deserialize)]
+struct KeyQuery {
+    key: String
+}
+
+#[derive(Deserialize)]
+struct OffsetQuery {
+    offset: u64,
+}
+
+#[derive(Deserialize)]
+struct DataLenQuery {
+    data_len: u64
 }
 
 async fn serve(
@@ -471,27 +486,33 @@ async fn serve(
 
     let ctx = Arc::new(ctx);
 
-    let put_object = warp::path!("putobject" / String)
+    let put_object = warp::path!("putobject")
         .and(warp::post())
+        .and(warp::query::<KeyQuery>())
         .and(warp::header::<u64>("content-length"))
         .and(warp::body::stream())
         .and(with_context(ctx.clone()))
         .then(put_object_api);
 
-    let put_zero_object = warp::path!("putzeroobject" / String / u64)
+    let put_zero_object = warp::path!("putzeroobject")
         .and(warp::post())
+        .and(warp::query::<KeyQuery>())
+        .and(warp::query::<DataLenQuery>())
         .and(with_context(ctx.clone()))
         .then(put_zero_object_api);
 
-    let update_object = warp::path!("updateobject" / String / u64)
+    let update_object = warp::path!("updateobject")
         .and(warp::post())
+        .and(warp::query::<KeyQuery>())
+        .and(warp::query::<OffsetQuery>())
         .and(warp::header::<u64>("content-length"))
         .and(warp::body::stream())
         .and(with_context(ctx.clone()))
         .then(update_object_api);
 
-    let get_object_with_ranges = warp::path!("getobjectwithranges" / String)
+    let get_object_with_ranges = warp::path!("getobjectwithranges")
         .and(warp::get())
+        .and(warp::query::<KeyQuery>())
         .and(warp::body::json::<Vec<(u64, u64)>>())
         .and(with_context(ctx))
         .then(get_object_with_ranges_api);

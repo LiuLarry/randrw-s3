@@ -20,9 +20,10 @@ pub async fn put_object(
     data_len: u64,
     reader: impl AsyncRead + Send + 'static,
 ) -> Result<()> {
-    let path = format!("{}/putobject/{}", SERVER_URL.as_str(), key);
+    let path = format!("{}/putobject", SERVER_URL.as_str());
 
     CLIENT.post(path)
+        .query(&("key", key))
         .header("Content-Length", data_len)
         .body(Body::wrap_stream(tokio_util::io::ReaderStream::new(reader)))
         .send()
@@ -35,11 +36,12 @@ pub async fn put_zero_object(
     key: &str,
     data_len: u64
 ) -> Result<()> {
-    let path = format!("{}/putzeroobject/{}/{}", SERVER_URL.as_str(), key, data_len);
+    let path = format!("{}/putzeroobject", SERVER_URL.as_str());
 
     println!("path: {}", path);
 
     let resp = CLIENT.post(path)
+        .query(&[("key", key), ("data_len", data_len.to_string().as_str())])
         .send()
         .await?;
 
@@ -64,9 +66,10 @@ pub async fn update_object(
     data_len: u64,
     reader: impl AsyncRead + Send + 'static,
 ) -> Result<()> {
-    let path = format!("{}/updateobject/{}/{}", SERVER_URL.as_str(), key, offset);
+    let path = format!("{}/updateobject", SERVER_URL.as_str());
 
     CLIENT.post(path)
+        .query(&[("key", key), ("offset", offset.to_string().as_str())])
         .header("Content-Length", data_len)
         .body(Body::wrap_stream(tokio_util::io::ReaderStream::new(reader)))
         .send()
