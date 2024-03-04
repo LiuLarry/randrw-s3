@@ -43,10 +43,16 @@ pub async fn put_zero_object(
         .join(key)?
         .join(&data_len.to_string())?;
 
-    CLIENT.post(path)
+    let resp = CLIENT.post(path)
         .send()
         .await?;
 
+    println!("code: {}", resp.status());
+
+    if resp.status() != 200 {
+        let err = resp.text().await?;
+        eprintln!("{}", err);
+    }
     Ok(())
 }
 

@@ -14,7 +14,7 @@ use aws_sdk_s3::config::{Credentials, SharedCredentialsProvider};
 use aws_sdk_s3::primitives::ByteStream;
 use aws_types::region::Region;
 use aws_types::SdkConfig;
-use bincode::{Decode, Encode};
+use bincode::Encode;
 use clap::Parser;
 use futures_util::TryStreamExt;
 use log::{info, LevelFilter};
