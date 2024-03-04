@@ -21,9 +21,7 @@ pub async fn put_object(
     data_len: u64,
     reader: impl AsyncRead + Send + 'static,
 ) -> Result<()> {
-    let path = SERVER_URL
-        .join("putobject")?
-        .join(key)?;
+    let path = format!("{}/putobject/{}", SERVER_URL, key);
 
     CLIENT.post(path)
         .header("Content-Length", data_len)
@@ -67,10 +65,7 @@ pub async fn update_object(
     data_len: u64,
     reader: impl AsyncRead + Send + 'static,
 ) -> Result<()> {
-    let path = SERVER_URL
-        .join("updateobject")?
-        .join(key)?
-        .join(&offset.to_string())?;
+    let path = format!("{}/updateobject/{}/{}", SERVER_URL, key, offset);
 
     CLIENT.post(path)
         .header("Content-Length", data_len)
@@ -86,9 +81,7 @@ pub async fn get_object_with_ranges(
     // (start position, length)
     ranges: &[(u64, u64)],
 ) -> Result<Vec<Part>> {
-    let path = SERVER_URL
-        .join("getobjectwithranges")?
-        .join(key)?;
+    let path = format!("{}/getobjectwithranges/{}", SERVER_URL, key);
 
     let resp = CLIENT.get(path)
         .json(ranges)
