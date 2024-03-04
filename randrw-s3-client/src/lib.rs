@@ -1,6 +1,5 @@
 #![feature(lazy_cell)]
 
-use std::str::FromStr;
 use std::sync::LazyLock;
 
 use anyhow::Result;
@@ -21,7 +20,7 @@ pub async fn put_object(
     data_len: u64,
     reader: impl AsyncRead + Send + 'static,
 ) -> Result<()> {
-    let path = format!("{}/putobject/{}", SERVER_URL, key);
+    let path = format!("{}/putobject/{}", SERVER_URL.as_str(), key);
 
     CLIENT.post(path)
         .header("Content-Length", data_len)
@@ -36,7 +35,7 @@ pub async fn put_zero_object(
     key: &str,
     data_len: u64
 ) -> Result<()> {
-    let path = format!("{}/putzeroobject/{}/{}", SERVER_URL, key, data_len);
+    let path = format!("{}/putzeroobject/{}/{}", SERVER_URL.as_str(), key, data_len);
 
     println!("path: {}", path);
 
@@ -65,7 +64,7 @@ pub async fn update_object(
     data_len: u64,
     reader: impl AsyncRead + Send + 'static,
 ) -> Result<()> {
-    let path = format!("{}/updateobject/{}/{}", SERVER_URL, key, offset);
+    let path = format!("{}/updateobject/{}/{}", SERVER_URL.as_str(), key, offset);
 
     CLIENT.post(path)
         .header("Content-Length", data_len)
@@ -81,7 +80,7 @@ pub async fn get_object_with_ranges(
     // (start position, length)
     ranges: &[(u64, u64)],
 ) -> Result<Vec<Part>> {
-    let path = format!("{}/getobjectwithranges/{}", SERVER_URL, key);
+    let path = format!("{}/getobjectwithranges/{}", SERVER_URL.as_str(), key);
 
     let resp = CLIENT.get(path)
         .json(ranges)
