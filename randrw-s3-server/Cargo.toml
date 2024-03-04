@@ -15,10 +15,13 @@ tokio = { version = "1", features = ["full"] }
 warp = { version = "0.3", default-features = false }
 aws-types = { version = "1" }
 aws-sdk-s3 = { version = "1", features = ["behavior-version-latest"] }
-tokio-util = {version = "0.7"}
+tokio-util = { version = "0.7" }
 futures-util = "0.3"
 multipart = { git = "https://github.com/bitrainforest/multipart.git", default-features = false, features = ["server"] }
 sscanf = "0.4"
 bincode = { version = "2.0.0-rc.3" }
 log = "0.4"
 log4rs = "1"
+
+[patch.crates-io]
+hyper = { git = "https://github.com/gh-efforts/hyper.git", branch = "0.14.x" }
