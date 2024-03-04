@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::path::Path;
 
 use anyhow::Result;
@@ -33,11 +34,13 @@ impl Datastore {
                 object_map,
             }
         } else {
-            let datastore_file = OpenOptions::new()
+            let mut datastore_file = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .open(path)?;
+
+            datastore_file.write_all(b"{}")?;
 
             Datastore {
                 datastore_file,
