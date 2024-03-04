@@ -5,15 +5,15 @@ use std::sync::LazyLock;
 
 use anyhow::Result;
 use bincode::Decode;
-use reqwest::{Body, Url};
+use reqwest::{Body, };
 use tokio::io::AsyncRead;
 
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::new()
 });
 
-static SERVER_URL: LazyLock<Url> = LazyLock::new(|| {
-    Url::from_str(&std::env::var("RANDRW_S3_SERVER").unwrap()).unwrap()
+static SERVER_URL: LazyLock<String> = LazyLock::new(|| {
+    std::env::var("RANDRW_S3_SERVER").unwrap()
 });
 
 pub async fn put_object(
@@ -38,10 +38,7 @@ pub async fn put_zero_object(
     key: &str,
     data_len: u64
 ) -> Result<()> {
-    let path = SERVER_URL
-        .join("putzeroobject")?
-        .join(key)?
-        .join(&data_len.to_string())?;
+    let path = format!("{}/putzeroobject/{}/{}", SERVER_URL, key, data_len);
 
     println!("path: {}", path);
 
