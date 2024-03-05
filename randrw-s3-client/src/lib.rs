@@ -1,5 +1,6 @@
 #![feature(lazy_cell)]
 
+use std::str::FromStr;
 use std::sync::LazyLock;
 
 use anyhow::{anyhow, Result};
@@ -14,6 +15,25 @@ static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 static SERVER_URL: LazyLock<String> = LazyLock::new(|| {
     std::env::var("RANDRW_S3_SERVER").unwrap()
 });
+
+pub async fn object_exist(
+    key: &str,
+) -> Result<bool> {
+    let path = format!("{}/objectexist", SERVER_URL.as_str());
+
+    let resp = CLIENT.post(path)
+        .query(&[("key", key)])
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        let err = resp.text().await?;
+        return Err(anyhow!(err));
+    }
+
+    let res = resp.text().await?;
+    Ok(bool::from_str(&res)?)
+}
 
 pub async fn put_object(
     key: &str,

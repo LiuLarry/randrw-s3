@@ -185,6 +185,14 @@ async fn put_object_api(
     }
 }
 
+fn object_exist_api (
+    key: KeyQuery,
+    ctx: Arc<Context>,
+) -> Response {
+    let res = ctx.datastore.read().unwrap().get(&key.key).is_some();
+    Response::new(Body::from(res.to_string()))
+}
+
 async fn update_object(
     ctx: &Context,
     key: String,
@@ -531,6 +539,12 @@ async fn serve(
         .and(with_context(ctx.clone()))
         .then(put_zero_object_api);
 
+    let object_exist = warp::path!("objectexist")
+        .and(warp::get())
+        .and(warp::query::<KeyQuery>())
+        .and(with_context(ctx.clone()))
+        .map(object_exist_api);
+
     let update_object = warp::path!("updateobject")
         .and(warp::post())
         .and(warp::query::<KeyQuery>())
@@ -550,7 +564,8 @@ async fn serve(
     let router = put_object
         .or(put_zero_object)
         .or(update_object)
-        .or(get_object_with_ranges);
+        .or(get_object_with_ranges)
+        .or(object_exist);
 
     let serve = warp::serve(router);
     info!("Listening on http://{}", bind);
