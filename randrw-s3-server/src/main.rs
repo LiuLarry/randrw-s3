@@ -16,6 +16,7 @@ use aws_types::region::Region;
 use aws_types::SdkConfig;
 use bincode::Encode;
 use clap::Parser;
+use futures_util::TryFutureExt;
 use futures_util::TryStreamExt;
 use log::{info, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
@@ -82,20 +83,47 @@ async fn put_object(
     let mut buff = vec![0u8; part_size as usize];
     let mut parts_num = 0;
 
+    let (_notify, notified) = tokio::sync::watch::channel(());
+    let sem = tokio::sync::Semaphore::new(8);
+    let sem = Arc::new(sem);
+
+    let mut futus = Vec::new();
+
     while body_len > 0 {
         let read_len = min(part_size, body_len);
         reader.read_exact(&mut buff[..read_len as usize]).await?;
 
-        ctx.s3client.put_object()
+        let mut notified = notified.clone();
+        let sem = sem.clone();
+
+        let send_fut = ctx.s3client.put_object()
             .bucket(&s3config.bucket)
             .key(format!("{}/{}", key, parts_num))
             .body(ByteStream::from(buff.clone()))
-            .send()
-            .await?;
+            .send();
+
+        let fut = tokio::spawn(async move {
+            let fut = async {
+                let _guard = sem.acquire().await?;
+                send_fut.await?;
+                Ok(())
+            };
+
+            tokio::select! {
+                res = fut => res,
+                _ = notified.changed() => Err(anyhow!("abort task"))
+            }
+        })
+        .map_err(|e| anyhow!(e))
+        .and_then(|r| async move { r });
+
+        futus.push(fut);
 
         body_len -= read_len;
         parts_num += 1;
     }
+
+    futures_util::future::try_join_all(futus).await?;
 
     let obj = datastore::Object {
         key,
