@@ -23,7 +23,7 @@ pub async fn put_object(
     let path = format!("{}/putobject", SERVER_URL.as_str());
 
     let resp = CLIENT.post(path)
-        .query(&("key", key))
+        .query(&[("key", key)])
         .header("Content-Length", data_len)
         .body(Body::wrap_stream(tokio_util::io::ReaderStream::new(reader)))
         .send()
@@ -90,7 +90,7 @@ pub async fn get_object_with_ranges(
     let path = format!("{}/getobjectwithranges", SERVER_URL.as_str());
 
     let resp = CLIENT.get(path)
-        .query(&("key", key))
+        .query(&[("key", key)])
         .json(ranges)
         .send()
         .await?;
