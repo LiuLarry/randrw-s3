@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::Path;
 
 use anyhow::Result;
@@ -52,6 +52,7 @@ impl Datastore {
 
     pub fn put(&mut self, obj: Object) -> Result<()> {
         self.object_map.insert(obj.key.clone(), obj);
+        self.datastore_file.seek(SeekFrom::Start(0))?;
         self.datastore_file.set_len(0)?;
         serde_json::to_writer(&self.datastore_file, &self.object_map)?;
         Ok(())
