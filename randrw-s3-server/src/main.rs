@@ -141,7 +141,8 @@ async fn put_zero_object_api(
     data_len_query: DataLenQuery,
     ctx: Arc<Context>,
 ) -> Response {
-    let stream = futures_util::stream::repeat_with(|| Ok([0u8].as_slice()));
+    let buff = [0u8; 8192];
+    let stream = futures_util::stream::repeat_with(|| Ok(buff.as_slice()));
 
     let res = put_object(
         &ctx,
