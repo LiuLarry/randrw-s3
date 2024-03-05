@@ -21,7 +21,7 @@ pub async fn object_exist(
 ) -> Result<bool> {
     let path = format!("{}/objectexist", SERVER_URL.as_str());
 
-    let resp = CLIENT.post(path)
+    let resp = CLIENT.get(path)
         .query(&[("key", key)])
         .send()
         .await?;
