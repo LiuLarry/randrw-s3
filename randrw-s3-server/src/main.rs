@@ -90,11 +90,12 @@ async fn put_object(
     let mut futus = Vec::new();
 
     while body_len > 0 {
+        let sem_guard = sem.clone().acquire_owned().await?;
+
         let read_len = min(part_size, body_len);
         reader.read_exact(&mut buff[..read_len as usize]).await?;
 
         let mut notified = notified.clone();
-        let sem = sem.clone();
 
         let send_fut = ctx.s3client.put_object()
             .bucket(&s3config.bucket)
@@ -104,7 +105,7 @@ async fn put_object(
 
         let fut = tokio::spawn(async move {
             let fut = async {
-                let _guard = sem.acquire().await?;
+                let _guard = sem_guard;
                 send_fut.await?;
                 Ok(())
             };
