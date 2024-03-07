@@ -275,6 +275,20 @@ async fn update_object(
         let read_len = min(part_size, content_len);
         reader.read_exact(&mut buff[..read_len as usize]).await?;
 
+        if read_len < part_size {
+            let range = format!("bytes={}-{}", read_len, part_size - 1);
+
+            let out = s3client.get_object()
+                .bucket(&s3config.bucket)
+                .key(format!("{}/{}", key, parts_num))
+                .range(range)
+                .send()
+                .await?;
+
+            let mut s3reader = out.body.into_async_read();
+            s3reader.read_exact(&mut buff[read_len as usize..]).await?;
+        }
+
         s3client.put_object()
             .bucket(&s3config.bucket)
             .key(format!("{}/{}", key, parts_num))
