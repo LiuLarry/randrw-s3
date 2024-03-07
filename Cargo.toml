@@ -7,3 +7,7 @@ members = [
 
 [patch.crates-io]
 hyper = { git = "https://github.com/gh-efforts/hyper.git", branch = "0.14.x" }
+
+[profile.release]
+lto = true
+codegen-units = 1

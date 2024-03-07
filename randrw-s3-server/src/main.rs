@@ -1,3 +1,5 @@
+// todo last part length bug
+
 use std::cmp::min;
 use std::collections::HashMap;
 use std::io;
@@ -74,7 +76,7 @@ async fn put_object(
     let lock = ctx.tasks.lock()
         .unwrap()
         .entry(key.clone())
-        .or_insert(Arc::new(tokio::sync::RwLock::new(())))
+        .or_insert_with(|| Arc::new(tokio::sync::RwLock::new(())))
         .clone();
 
     let _guard = lock.write().await;
@@ -206,7 +208,7 @@ async fn update_object(
     let lock = ctx.tasks.lock()
         .unwrap()
         .entry(key.clone())
-        .or_insert(Arc::new(tokio::sync::RwLock::new(())))
+        .or_insert_with(|| Arc::new(tokio::sync::RwLock::new(())))
         .clone();
 
     let _guard = lock.read().await;
@@ -343,7 +345,7 @@ async fn get_object_with_ranges(
     let lock = ctx.tasks.lock()
         .unwrap()
         .entry(key.clone())
-        .or_insert(Arc::new(tokio::sync::RwLock::new(())))
+        .or_insert_with(|| Arc::new(tokio::sync::RwLock::new(())))
         .clone();
 
     let _guard = lock.read().await;
