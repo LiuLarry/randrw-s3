@@ -371,7 +371,7 @@ async fn get_object_with_ranges(
     let part_size = obj.part_size;
 
     let create_buf_t = Instant::now();
-    let mut parts = ranges.iter()
+    let parts = ranges.iter()
         .map(|(offset, len)| {
             Part {
                 offset: *offset,
@@ -380,9 +380,13 @@ async fn get_object_with_ranges(
         })
         .collect::<Vec<_>>();
 
+    let parts = Box::leak(Box::new(parts));
+    let parts_ptr = parts as *mut Vec<Part> as usize;
+
     info!("create buf use: {:?}", create_buf_t.elapsed());
 
-    let mut keymap = HashMap::new();
+    let keymap: &mut HashMap<u64, Vec<(usize, &mut [u8])>> = Box::leak(Box::new(HashMap::new()));
+    let keymap_ptr = keymap as *mut HashMap<u64, Vec<(usize, &mut [u8])>> as usize;
 
     for ((offset, _), part) in ranges.iter().zip(parts.iter_mut()) {
         let mut offset = *offset;
@@ -428,7 +432,7 @@ async fn get_object_with_ranges(
             .range(ranges_str)
             .send();
 
-        let fut = async {
+        let fut = async move {
             let output = send.await?;
             let content_type = output.content_type.ok_or_else(|| anyhow!("Content-Type can't be empty"))?;
 
@@ -461,10 +465,23 @@ async fn get_object_with_ranges(
             Ok(())
         };
 
+        let fut = tokio::spawn(fut)
+            .map_err(|e| anyhow!(e))
+            .and_then(|r| async move { r });
+
         futs.push(fut);
     }
 
-    futures_util::future::try_join_all(futs).await?;
+    let futs_res = futures_util::future::try_join_all(futs).await;
+    let parts;
+
+    unsafe {
+        let _ = Box::from_raw(keymap_ptr as *mut HashMap<u64, Vec<(usize, &mut [u8])>>);
+        parts = *Box::from_raw(parts_ptr as *mut Vec<Part>);
+    }
+
+    futs_res?;
+
     info!("read data use: {:?}", read_data_t.elapsed());
     info!("get object with ranges use: {:?}, ranges: {}", t.elapsed(), ranges.len());
     Ok(parts)
