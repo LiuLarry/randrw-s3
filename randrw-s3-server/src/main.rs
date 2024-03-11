@@ -350,6 +350,8 @@ async fn get_object_with_ranges(
     // (start position, length)
     ranges: &[(u64, u64)],
 ) -> Result<Vec<Part>> {
+    let t = Instant::now();
+
     let s3config = &ctx.s3config;
     let s3client = &ctx.s3client;
 
@@ -364,7 +366,6 @@ async fn get_object_with_ranges(
         .clone();
 
     let _guard = lock.read().await;
-    let t = Instant::now();
 
     let obj = ctx.datastore.read().unwrap().get(&key).ok_or_else(|| anyhow!("{} not found", key))?;
     let part_size = obj.part_size;
@@ -459,7 +460,7 @@ async fn get_object_with_ranges(
     }
 
     futures_util::future::try_join_all(futs).await?;
-    info!("get object with ranges use: {:?}", t.elapsed());
+    info!("get object with ranges use: {:?}, ranges: {}", t.elapsed(), ranges.len());
     Ok(parts)
 }
 
