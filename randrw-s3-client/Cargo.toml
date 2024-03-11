@@ -13,3 +13,5 @@ tokio-util = { version = "0.7" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
+rand = "0.8"
+futures-util = "0.3"
