@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{anyhow, ensure, Result};
 use aws_sdk_s3::Client;
@@ -363,6 +364,8 @@ async fn get_object_with_ranges(
         .clone();
 
     let _guard = lock.read().await;
+    let t = Instant::now();
+
     let obj = ctx.datastore.read().unwrap().get(&key).ok_or_else(|| anyhow!("{} not found", key))?;
     let part_size = obj.part_size;
 
@@ -456,6 +459,7 @@ async fn get_object_with_ranges(
     }
 
     futures_util::future::try_join_all(futs).await?;
+    info!("get object with ranges use: {:?}", t.elapsed());
     Ok(parts)
 }
 
