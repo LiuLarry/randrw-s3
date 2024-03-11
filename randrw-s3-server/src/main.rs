@@ -370,6 +370,7 @@ async fn get_object_with_ranges(
     let obj = ctx.datastore.read().unwrap().get(&key).ok_or_else(|| anyhow!("{} not found", key))?;
     let part_size = obj.part_size;
 
+    let create_buf_t = Instant::now();
     let mut parts = ranges.iter()
         .map(|(offset, len)| {
             Part {
@@ -378,6 +379,8 @@ async fn get_object_with_ranges(
             }
         })
         .collect::<Vec<_>>();
+
+    info!("create buf use: {:?}", create_buf_t.elapsed());
 
     let mut keymap = HashMap::new();
 
@@ -402,6 +405,8 @@ async fn get_object_with_ranges(
     }
 
     let mut futs = Vec::new();
+
+    let read_data_t = Instant::now();
 
     for (parts_num, parts) in keymap.iter_mut() {
         let ranges: Vec<(Option<u64>, Option<u64>)> = parts
@@ -460,6 +465,7 @@ async fn get_object_with_ranges(
     }
 
     futures_util::future::try_join_all(futs).await?;
+    info!("read data use: {:?}", read_data_t.elapsed());
     info!("get object with ranges use: {:?}, ranges: {}", t.elapsed(), ranges.len());
     Ok(parts)
 }
