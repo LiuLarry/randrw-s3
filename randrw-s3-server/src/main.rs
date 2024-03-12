@@ -1,31 +1,36 @@
 // todo last part length bug
 
+use std::{io, task, vec};
 use std::cmp::min;
 use std::collections::HashMap;
-use std::io;
 use std::io::Read;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::task::Poll;
 use std::time::Instant;
+use std::vec::IntoIter;
 
 use anyhow::{anyhow, ensure, Result};
 use aws_sdk_s3::Client;
 use aws_sdk_s3::config::{Credentials, SharedCredentialsProvider};
 use aws_sdk_s3::primitives::ByteStream;
+use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
 use aws_types::region::Region;
 use aws_types::SdkConfig;
 use bincode::Encode;
 use clap::Parser;
+use futures_util::future::MapOk;
 use futures_util::TryFutureExt;
 use futures_util::TryStreamExt;
-use log::{info, LevelFilter};
+use log::{debug, info, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use mimalloc::MiMalloc;
+use rand::Rng;
 use serde::Deserialize;
 use tokio::io::AsyncReadExt;
 use tokio_util::bytes::Buf;
@@ -33,6 +38,9 @@ use tokio_util::io::StreamReader;
 use warp::{Filter, Stream};
 use warp::http::StatusCode;
 use warp::hyper::Body;
+use warp::hyper::client::connect::dns::{GaiAddrs, GaiFuture, GaiResolver, Name};
+use warp::hyper::client::HttpConnector;
+use warp::hyper::service::Service;
 use warp::reply::Response;
 
 use crate::datastore::Datastore;
@@ -406,6 +414,7 @@ async fn get_object_with_ranges(
     }
 
     let mut futs = Vec::new();
+    let (notify, notified) = tokio::sync::watch::channel(());
 
     for (parts_num, parts) in keymap.iter_mut() {
         let ranges: Vec<(Option<u64>, Option<u64>)> = parts
@@ -414,11 +423,11 @@ async fn get_object_with_ranges(
             .collect();
 
         let mut ranges_str = String::from("bytes=");
-        ranges_str.push_str(&range_to_string(ranges[0])?);
+        ranges_str.push_str(&range_to_string(ranges[0]).unwrap());
 
         for i in 1..ranges.len() {
             ranges_str.push_str(", ");
-            ranges_str.push_str(&range_to_string(ranges[i])?);
+            ranges_str.push_str(&range_to_string(ranges[i]).unwrap());
         }
 
         let send = s3client.get_object()
@@ -460,14 +469,24 @@ async fn get_object_with_ranges(
             Ok(())
         };
 
-        let fut = tokio::spawn(fut)
-            .map_err(|e| anyhow!(e))
-            .and_then(|r| async move { r });
+        let mut notified = notified.clone();
+
+        let fut = tokio::spawn(async move {
+            tokio::select! {
+                res = fut => res,
+                _ = notified.changed() => Err(anyhow!("abort task"))
+            }
+        })
+        .map_err(|e| anyhow!(e))
+        .and_then(|r| async move { r });
 
         futs.push(fut);
     }
 
     let futs_res = futures_util::future::try_join_all(futs).await;
+    let _ = notify.send(());
+    notify.closed().await;
+
     let parts;
 
     unsafe {
@@ -526,6 +545,38 @@ struct DataLenQuery {
     data_len: u64
 }
 
+
+#[derive(Clone)]
+struct RoundRobin {
+    inner: GaiResolver,
+}
+
+impl Service<Name> for RoundRobin {
+    type Response = IntoIter<SocketAddr>;
+    type Error = io::Error;
+    type Future = MapOk<GaiFuture, fn(GaiAddrs) -> IntoIter<SocketAddr>>;
+
+    fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> Poll<Result<(), io::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, name: Name) -> Self::Future {
+        self.inner.call(name).map_ok(|v| {
+            let mut list: Vec<SocketAddr> = v.collect();
+
+            if list.len() > 1 {
+                let i = rand::thread_rng().gen_range(0..list.len());
+                list = vec![list[i]];
+            }
+
+            if !list.is_empty() {
+                debug!("ip select {}", list[0]);
+            }
+            list.into_iter()
+        })
+    }
+}
+
 async fn serve(
     bind: SocketAddr,
     s3_config_path: &Path,
@@ -546,6 +597,13 @@ async fn serve(
             "Static",
         )))
     }
+
+    let connector = HttpConnector::new_with_resolver(RoundRobin { inner: GaiResolver::new() });
+
+    let client = HyperClientBuilder::new()
+        .build(connector);
+
+    builder.set_http_client(Some(client));
 
     let s3client = Client::new(&builder.build());
     let curr = std::env::current_exe().ok();
