@@ -33,6 +33,16 @@ async fn main() {
                 Cursor::new(data)
             ).await.unwrap();
         }
+        "put" => {
+            let key = args.next().unwrap();
+            let file_path = args.next().unwrap();
+
+            let f = tokio::fs::File::open(&file_path).await.unwrap();
+            let md = f.metadata().await.unwrap();
+            let file_size = md.len();
+
+            randrw_s3_client::put_object(&key, file_size, f).await.unwrap();
+        }
         "get" => {
             let key = args.next().unwrap();
             let chunks = usize::from_str(&args.next().unwrap()).unwrap();
