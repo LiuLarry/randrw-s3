@@ -1,0 +1,7 @@
+{
+  "endpoint": "http://xxx",
+  "bucket": "xxx",
+  "region": "xxx",
+  "access_key": "",
+  "secret_key": ""
+}
