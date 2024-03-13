@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 
 use anyhow::{anyhow, Result};
 use bincode::Decode;
+use log::error;
 use reqwest::{Body, };
 use tokio::io::AsyncRead;
 
@@ -107,20 +108,39 @@ pub async fn get_object_with_ranges(
     // (start position, length)
     ranges: &[(u64, u64)],
 ) -> Result<Vec<Part>> {
-    let path = format!("{}/getobjectwithranges", SERVER_URL.as_str());
+    const RETRY: u8 = 2;
+    let mut count = 0;
 
-    let resp = CLIENT.get(path)
-        .query(&[("key", key)])
-        .json(ranges)
-        .send()
-        .await?;
+    loop {
+        let fut = async {
+            let path = format!("{}/getobjectwithranges", SERVER_URL.as_str());
 
-    if !resp.status().is_success() {
-        let err = resp.text().await?;
-        return Err(anyhow!(err));
+            let resp = CLIENT.get(path)
+                .query(&[("key", key)])
+                .json(ranges)
+                .send()
+                .await?;
+
+            if !resp.status().is_success() {
+                let err = resp.text().await?;
+                return Err(anyhow!(err));
+            }
+
+            let buff = resp.bytes().await?;
+            let parts: Vec<Part> = bincode::decode_from_slice(buff.as_ref(), bincode::config::standard())?.0;
+            Ok(parts)
+        };
+
+        match fut.await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                if count < RETRY {
+                    error!("get_object_with_ranges: {:?}; retry", e);
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+        count += 1;
     }
-
-    let buff = resp.bytes().await?;
-    let parts: Vec<Part> = bincode::decode_from_slice(buff.as_ref(), bincode::config::standard())?.0;
-    Ok(parts)
 }
