@@ -484,8 +484,8 @@ async fn get_object_with_ranges(
     }
 
     let futs_res = futures_util::future::try_join_all(futs).await;
-    let _ = notify.send(());
     drop(notified);
+    let _ = notify.send(());
     notify.closed().await;
 
     let parts;
