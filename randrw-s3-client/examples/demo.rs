@@ -46,9 +46,10 @@ async fn main() {
         "get" => {
             let key = args.next().unwrap();
             let chunks = usize::from_str(&args.next().unwrap()).unwrap();
+            let ranges = usize::from_str(&args.next().unwrap()).unwrap();
             let mut rng = rand::thread_rng();
 
-            let ranges = (0..32768).into_iter()
+            let ranges = (0..ranges).into_iter()
                 .map(|_| (rng.gen_range(0u64..1024 * 1024 * 1024), 32u64))
                 .collect::<Vec<_>>();
 

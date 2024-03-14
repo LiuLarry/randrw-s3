@@ -31,6 +31,7 @@ use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use mimalloc::MiMalloc;
 use rand::Rng;
+use rust_lapper::{Interval, Lapper};
 use serde::Deserialize;
 use tokio::io::AsyncReadExt;
 use tokio_util::bytes::Buf;
@@ -356,7 +357,13 @@ fn range_to_string(range: (Option<u64>, Option<u64>)) -> Result<String> {
     Ok(str)
 }
 
-#[derive(Encode, Clone)]
+// (start, end, total)
+fn parse_range(range_str: &str) -> Result<(u64, u64, u64)> {
+    sscanf::scanf!(range_str, "bytes {}-{}/{}", u64, u64, u64)
+        .map_err(|_| anyhow!("parse range error"))
+}
+
+#[derive(Encode, Clone, Eq, PartialEq)]
 struct Part {
     offset: u64,
     data: Vec<u8>,
@@ -450,9 +457,22 @@ async fn get_object_with_ranges(
             let output = send.await?;
             let content_type = output.content_type.ok_or_else(|| anyhow!("Content-Type can't be empty"))?;
 
-            if content_type.contains("octet-stream") {
-                ensure!(parts.len() == 1);
-                output.body.into_async_read().read_exact(parts[0].1).await?;
+            let merge_parts = if content_type.contains("octet-stream") {
+                let range = output.content_range.ok_or_else(|| {
+                    anyhow!("Content-Range can't be empty")
+                })?;
+
+                let (start, end, _): (u64, u64, u64) = parse_range(&range)?;
+
+                let len = end - start + 1;
+                let mut buff = Vec::with_capacity(len as usize);
+                output.body.into_async_read().read_to_end(&mut buff).await?;
+
+                let part = Part {
+                    offset: start,
+                    data: buff,
+                };
+                vec![part]
             } else {
                 let boundary: String = sscanf::scanf!(
                     content_type,
@@ -469,12 +489,72 @@ async fn get_object_with_ranges(
                 output.body.into_async_read().read_to_end(&mut buff).await?;
 
                 let mut multipart = multipart::server::Multipart::with_body(buff.as_slice(), boundary);
-                let mut index = 0;
+                let mut list = Vec::with_capacity(ranges.len());
 
                 while let Some(mut part_field) = multipart.read_entry()? {
-                    part_field.data.read_exact(parts[index].1)?;
-                    index += 1;
+                    let range = part_field.headers.content_range.ok_or_else(|| {
+                        anyhow!("content-Range can't be empty")
+                    })?;
+
+                    let (start, end, _): (u64, u64, u64) = parse_range(&range)?;
+                    let len = end - start + 1;
+
+                    let mut buff = Vec::with_capacity(len as usize);
+                    part_field.data.read_to_end(&mut buff)?;
+
+                    let part = Part {
+                        offset: start,
+                        data: buff,
+                    };
+                    list.push(part);
                 }
+                list
+            };
+
+            // if merge_parts.len() == parts.len() {
+            //     for (from, (offset, to)) in merge_parts
+            //         .into_iter()
+            //         .zip(parts) {
+            //         ensure!(from.offset == (*offset) as u64 && from.data.len() == to.len());
+            //         to.copy_from_slice(&from.data);
+            //     }
+            //
+            //     return Ok(());
+            // }
+
+            // overlapping
+            let v = merge_parts.into_iter()
+                .map(|part| Interval {
+                    start: part.offset,
+                    stop: part.offset + part.data.len() as u64,
+                    val: part
+                })
+                .collect();
+
+            let lapper = Lapper::new(v);
+
+            for (start, to) in parts {
+                let start = *start;
+                // include
+                let end = start + to.len() - 1;
+                let len = to.len();
+
+                let mut iv_opt = None;
+                let mut it = lapper.find(start as u64, start as u64 + 1);
+
+                while let Some(iv) = it.next() {
+                    if start as u64 >= iv.start && (end as u64) < iv.stop {
+                        iv_opt = Some(iv);
+                        break
+                    }
+                };
+
+                let iv = match iv_opt {
+                    None => return Err(anyhow!("parse ranges failed")),
+                    Some(v) => v,
+                };
+
+                to.copy_from_slice(&iv.val.data[start - iv.start as usize..start - iv.start as usize + len]);
             }
             Ok(())
         };
