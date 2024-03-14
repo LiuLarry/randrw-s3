@@ -108,7 +108,7 @@ pub async fn get_object_with_ranges(
     // (start position, length)
     ranges: &[(u64, u64)],
 ) -> Result<Vec<Part>> {
-    const RETRY: u8 = 2;
+    const RETRY: u8 = 5;
     let mut count = 0;
 
     loop {
