@@ -108,36 +108,36 @@ async fn put_object(
 
         let mut notified = notified.clone();
 
-        let head_fut = ctx.s3client.head_object()
+        let is_exist = ctx.s3client.head_object()
             .bucket(&s3config.bucket)
             .key(format!("{}/{}", key, parts_num))
-            .send();
+            .send()
+            .await;
 
-        let send_fut = ctx.s3client.put_object()
-            .bucket(&s3config.bucket)
-            .key(format!("{}/{}", key, parts_num))
-            .body(ByteStream::from(buff.clone()))
-            .send();
+        if is_exist.is_err() {
+            let send_fut = ctx.s3client.put_object()
+                .bucket(&s3config.bucket)
+                .key(format!("{}/{}", key, parts_num))
+                .body(ByteStream::from(buff.clone()))
+                .send();
 
-        let fut = tokio::spawn(async move {
-            let fut = async {
-                let _guard = sem_guard;
-
-                if head_fut.await.is_err() {
+            let fut = tokio::spawn(async move {
+                let fut = async {
+                    let _guard = sem_guard;
                     send_fut.await?;
+                    Ok(())
+                };
+
+                tokio::select! {
+                    res = fut => res,
+                    _ = notified.changed() => Err(anyhow!("abort task"))
                 }
-                Ok(())
-            };
+            })
+            .map_err(|e| anyhow!(e))
+            .and_then(|r| async move { r });
 
-            tokio::select! {
-                res = fut => res,
-                _ = notified.changed() => Err(anyhow!("abort task"))
-            }
-        })
-        .map_err(|e| anyhow!(e))
-        .and_then(|r| async move { r });
-
-        futus.push(fut);
+            futus.push(fut);
+        }
 
         body_len -= read_len;
         parts_num += 1;
