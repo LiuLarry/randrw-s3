@@ -108,6 +108,11 @@ async fn put_object(
 
         let mut notified = notified.clone();
 
+        let get_fut = ctx.s3client.get_object()
+            .bucket(&s3config.bucket)
+            .key(format!("{}/{}", key, parts_num))
+            .send();
+
         let send_fut = ctx.s3client.put_object()
             .bucket(&s3config.bucket)
             .key(format!("{}/{}", key, parts_num))
@@ -117,7 +122,10 @@ async fn put_object(
         let fut = tokio::spawn(async move {
             let fut = async {
                 let _guard = sem_guard;
-                send_fut.await?;
+
+                if get_fut.await.is_err() {
+                    send_fut.await?;
+                }
                 Ok(())
             };
 
