@@ -108,7 +108,7 @@ async fn put_object(
 
         let mut notified = notified.clone();
 
-        let get_fut = ctx.s3client.get_object()
+        let head_fut = ctx.s3client.head_object()
             .bucket(&s3config.bucket)
             .key(format!("{}/{}", key, parts_num))
             .send();
@@ -123,7 +123,7 @@ async fn put_object(
             let fut = async {
                 let _guard = sem_guard;
 
-                if get_fut.await.is_err() {
+                if head_fut.await.is_err() {
                     send_fut.await?;
                 }
                 Ok(())
