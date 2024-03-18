@@ -108,13 +108,15 @@ async fn put_object(
 
         let mut notified = notified.clone();
 
-        let is_exist = ctx.s3client.head_object()
+        let content_len = ctx.s3client.head_object()
             .bucket(&s3config.bucket)
             .key(format!("{}/{}", key, parts_num))
             .send()
-            .await;
+            .await
+            .ok()
+            .and_then(|out| out.content_length.map(|v| v as u64));
 
-        if is_exist.is_err() {
+        if content_len != Some(part_size) {
             let send_fut = ctx.s3client.put_object()
                 .bucket(&s3config.bucket)
                 .key(format!("{}/{}", key, parts_num))
