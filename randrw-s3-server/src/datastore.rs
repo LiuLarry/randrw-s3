@@ -55,6 +55,7 @@ impl Datastore {
         self.datastore_file.seek(SeekFrom::Start(0))?;
         self.datastore_file.set_len(0)?;
         serde_json::to_writer(&self.datastore_file, &self.object_map)?;
+        self.datastore_file.flush()?;
         Ok(())
     }
 
