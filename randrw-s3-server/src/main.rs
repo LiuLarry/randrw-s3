@@ -96,7 +96,7 @@ async fn put_object(
     let mut parts_num = 0;
 
     let (_notify, notified) = tokio::sync::watch::channel(());
-    let sem = tokio::sync::Semaphore::new(8);
+    let sem = tokio::sync::Semaphore::new(4);
     let sem = Arc::new(sem);
 
     let mut futus = Vec::new();
