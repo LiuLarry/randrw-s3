@@ -199,7 +199,7 @@ async fn put_object_api(
     match res {
         Ok(_) => Response::new(Body::empty()),
         Err(e) => {
-            let mut resp = Response::new(Body::from(e.to_string()));
+            let mut resp = Response::new(Body::from(format!("{:?}", e)));
             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             resp
         }
@@ -339,7 +339,7 @@ async fn update_object_api(
     match res {
         Ok(_) => Response::new(Body::empty()),
         Err(e) => {
-            let mut resp = Response::new(Body::from(e.to_string()));
+            let mut resp = Response::new(Body::from(format!("{:?}", e)));
             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             resp
         }
@@ -528,7 +528,7 @@ async fn get_object_with_ranges_api(
             Response::new(Body::from(out))
         },
         Err(e) => {
-            let mut resp = Response::new(Body::from(e.to_string()));
+            let mut resp = Response::new(Body::from(format!("{:?}", e)));
             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
              resp
         }
