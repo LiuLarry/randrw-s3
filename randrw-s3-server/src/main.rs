@@ -17,6 +17,7 @@ use anyhow::{anyhow, ensure, Result};
 use aws_sdk_s3::Client;
 use aws_sdk_s3::config::{Credentials, SharedCredentialsProvider};
 use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
 use aws_smithy_runtime::client::http::hyper_014::HyperClientBuilder;
 use aws_types::region::Region;
 use aws_types::SdkConfig;
@@ -39,6 +40,7 @@ use tokio_util::io::StreamReader;
 use warp::{Filter, Stream};
 use warp::http::StatusCode;
 use warp::hyper::Body;
+use warp::hyper::body::Bytes;
 use warp::hyper::client::connect::dns::{GaiAddrs, GaiFuture, GaiResolver, Name};
 use warp::hyper::client::HttpConnector;
 use warp::hyper::service::Service;
@@ -66,6 +68,72 @@ struct Context {
     tasks: std::sync::Mutex<HashMap<String, Arc<tokio::sync::RwLock<()>>>>,
     s3client: Client,
     s3config: S3Config,
+}
+
+async fn multipart_upload(
+    client: &Client,
+    bucket: &str,
+    key: &str,
+    mut body: Bytes
+) -> Result<()> {
+    // 447 MB
+    const UPLOAD_PART_SIZE: usize = 447 * 1024 * 1024;
+
+    let upload_out = client.create_multipart_upload()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await?;
+
+    let upload_id = upload_out
+        .upload_id()
+        .ok_or_else(|| anyhow!("{}, must need upload id", key))?;
+
+    let mut etags = Vec::new();
+    let mut part_num = 1;
+
+    while body.len() > 0 {
+        let read_size = min(UPLOAD_PART_SIZE, body.len());
+        let upload_data = body.split_to(read_size);
+
+        let etag = client.upload_part()
+            .bucket(bucket)
+            .key(key)
+            .upload_id(upload_id)
+            .part_number(part_num)
+            .body(ByteStream::from(upload_data))
+            .send()
+            .await?
+            .e_tag
+            .ok_or_else(|| anyhow!("{} must need e_tag", key))?;
+
+        etags.push(etag);
+        part_num += 1;
+    }
+
+    let parts = etags.into_iter()
+        .enumerate()
+        .map(|(i, e_tag)| {
+            CompletedPart::builder()
+                .part_number(i as i32 + 1)
+                .e_tag(e_tag)
+                .build()
+        })
+        .collect::<Vec<_>>();
+
+    client.complete_multipart_upload()
+        .multipart_upload(
+            CompletedMultipartUpload::builder()
+                .set_parts(Some(parts))
+                .build(),
+        )
+        .bucket(bucket)
+        .key(key)
+        .upload_id(upload_id)
+        .send()
+        .await?;
+
+    Ok(())
 }
 
 async fn put_object(
@@ -118,17 +186,15 @@ async fn put_object(
             .and_then(|out| out.content_length.map(|v| v as u64));
 
         if content_len != Some(part_size) {
-            let send_fut = ctx.s3client.put_object()
-                .bucket(&s3config.bucket)
-                .key(format!("{}/{}", key, parts_num))
-                .body(ByteStream::from(buff.clone()))
-                .send();
+            let s3client = ctx.s3client.clone();
+            let bucket = s3config.bucket.clone();
+            let key = format!("{}/{}", key, parts_num);
+            let buff= Bytes::copy_from_slice(&buff);
 
             let fut = tokio::spawn(async move {
                 let fut = async {
                     let _guard = sem_guard;
-                    send_fut.await?;
-                    Ok(())
+                    multipart_upload(&s3client, &bucket, &key, buff).await
                 };
 
                 tokio::select! {
@@ -281,12 +347,7 @@ async fn update_object(
         content_len -= part_size - (offset % part_size);
     }
 
-    s3client.put_object()
-        .bucket(&s3config.bucket)
-        .key(format!("{}/{}", key, parts_num))
-        .body(ByteStream::from(buff.clone()))
-        .send()
-        .await?;
+    multipart_upload(s3client, &s3config.bucket, &format!("{}/{}", key, parts_num), Bytes::copy_from_slice(&buff)).await?;
 
     parts_num += 1;
 
@@ -309,12 +370,7 @@ async fn update_object(
             s3reader.read_exact(&mut buff[read_len as usize..]).await?;
         }
 
-        s3client.put_object()
-            .bucket(&s3config.bucket)
-            .key(format!("{}/{}", key, parts_num))
-            .body(ByteStream::from(buff.clone()))
-            .send()
-            .await?;
+        multipart_upload(s3client, &s3config.bucket, &format!("{}/{}", key, parts_num), Bytes::copy_from_slice(&buff)).await?;
 
         content_len -= read_len;
         parts_num += 1;
