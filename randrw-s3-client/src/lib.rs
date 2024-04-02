@@ -9,6 +9,8 @@ use log::error;
 use reqwest::{Body, };
 use tokio::io::AsyncRead;
 
+const RETRY: u8 = 5;
+
 static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::new()
 });
@@ -61,18 +63,36 @@ pub async fn put_zero_object(
     key: &str,
     data_len: u64
 ) -> Result<()> {
-    let path = format!("{}/putzeroobject", SERVER_URL.as_str());
+    let mut count = 0;
 
-    let resp = CLIENT.post(path)
-        .query(&[("key", key), ("data_len", data_len.to_string().as_str())])
-        .send()
-        .await?;
+    loop {
+        let fut = async {
+            let path = format!("{}/putzeroobject", SERVER_URL.as_str());
 
-    if !resp.status().is_success() {
-        let err = resp.text().await?;
-        return Err(anyhow!(err));
+            let resp = CLIENT.post(path)
+                .query(&[("key", key), ("data_len", data_len.to_string().as_str())])
+                .send()
+                .await?;
+
+            if !resp.status().is_success() {
+                let err = resp.text().await?;
+                return Err(anyhow!(err));
+            }
+            Ok(())
+        };
+
+        match fut.await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                if count < RETRY {
+                    error!("put_zero_object: {:?}; retry", e);
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+        count += 1;
     }
-    Ok(())
 }
 
 #[derive(Decode, Clone)]
@@ -108,7 +128,6 @@ pub async fn get_object_with_ranges(
     // (start position, length)
     ranges: &[(u64, u64)],
 ) -> Result<Vec<Part>> {
-    const RETRY: u8 = 5;
     let mut count = 0;
 
     loop {
