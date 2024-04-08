@@ -26,7 +26,7 @@ use clap::Parser;
 use futures_util::future::MapOk;
 use futures_util::TryFutureExt;
 use futures_util::TryStreamExt;
-use log::{debug, info, LevelFilter};
+use log::{debug, error, info, LevelFilter};
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
 use log4rs::encode::pattern::PatternEncoder;
@@ -243,7 +243,10 @@ async fn put_zero_object_api(
     match res {
         Ok(_) => Response::new(Body::empty()),
         Err(e) => {
-            let mut resp = Response::new(Body::from(format!("{:?}", e)));
+            let error = format!("{:?}", e);
+            error!("put_zero_object_api error: {}", error);
+
+            let mut resp = Response::new(Body::from(error));
             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             resp
         }
@@ -266,7 +269,10 @@ async fn put_object_api(
     match res {
         Ok(_) => Response::new(Body::empty()),
         Err(e) => {
-            let mut resp = Response::new(Body::from(format!("{:?}", e)));
+            let error = format!("{:?}", e);
+            error!("put_object_api error: {}", error);
+
+            let mut resp = Response::new(Body::from(error));
             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             resp
         }
@@ -396,7 +402,10 @@ async fn update_object_api(
     match res {
         Ok(_) => Response::new(Body::empty()),
         Err(e) => {
-            let mut resp = Response::new(Body::from(format!("{:?}", e)));
+            let error = format!("{:?}", e);
+            error!("update_object_api error: {}", error);
+
+            let mut resp = Response::new(Body::from(error));
             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             resp
         }
@@ -664,7 +673,10 @@ async fn get_object_with_ranges_api(
             Response::new(Body::from(out))
         },
         Err(e) => {
-            let mut resp = Response::new(Body::from(format!("{:?}", e)));
+            let error = format!("{:?}", e);
+            error!("get_object_with_ranges_api error: {}", error);
+
+            let mut resp = Response::new(Body::from(error));
             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
              resp
         }
