@@ -313,6 +313,62 @@ async fn update_object(
 
     let mut parts_num = offset / part_size;
 
+    let is_exist = match {
+        ctx.s3client
+            .head_object()
+            .bucket(&s3config.bucket)
+            .key(format!("{}/{}", key, parts_num))
+            .send()
+            .await
+    } {
+        Ok(_) => true,
+        _ => false,
+    };
+
+    if !is_exist {
+        // 两种情况
+        // 1. content_len <= part_size
+        if content_len <= part_size {
+            reader.read_exact(&mut buff[..content_len as usize]).await?;
+            
+            multipart_upload(
+                s3client,
+                &s3config.bucket,
+                &format!("{}/{}", key, parts_num),
+                Bytes::copy_from_slice(&buff),
+            )
+            .await?;
+            return Ok(());
+        } else {
+            // 2. content_len > part_size
+            // 2.1 上传part_size大小的内容
+            while content_len > part_size {
+                reader.read_exact(&mut buff[..part_size as usize]).await?;
+                multipart_upload(
+                    s3client,
+                    &s3config.bucket,
+                    &format!("{}/{}", key, parts_num),
+                    Bytes::copy_from_slice(&buff),
+                )
+                .await?;
+                parts_num += 1;
+                content_len -= part_size;
+            }
+
+            // 2.2 上传多余的part
+            reader.read_exact(&mut buff[..content_len as usize]).await?;
+
+            multipart_upload(
+                s3client,
+                &s3config.bucket,
+                &format!("{}/{}", key, parts_num),
+                Bytes::copy_from_slice(&buff),
+            )
+            .await?;
+        }
+        return Ok(());
+    }
+    
     // |..{....|......|
     if offset % part_size != 0 {
         let offset_in_part = (offset % part_size) as usize;
