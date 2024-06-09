@@ -312,6 +312,7 @@ async fn update_object(
     let mut buff = vec![0u8; part_size as usize];
 
     let mut parts_num = offset / part_size;
+    info!("Update object {:?} parts_num {:?} offset: {:?} content_len {:?}", key, parts_num, offset, content_len);
 
     let is_exist = match {
         ctx.s3client
@@ -409,6 +410,7 @@ async fn update_object(
         content_len -= part_size - (offset % part_size);
     }
 
+    info!("Upload object 1: key {} {}", key, parts_num);
     multipart_upload(s3client, &s3config.bucket, &format!("{}/{}", key, parts_num), Bytes::copy_from_slice(&buff)).await?;
 
     parts_num += 1;
@@ -432,6 +434,7 @@ async fn update_object(
             s3reader.read_exact(&mut buff[read_len as usize..]).await?;
         }
 
+        info!("Upload object 2: key {} {}", key, parts_num);
         multipart_upload(s3client, &s3config.bucket, &format!("{}/{}", key, parts_num), Bytes::copy_from_slice(&buff)).await?;
 
         content_len -= read_len;
@@ -707,7 +710,7 @@ async fn get_object_with_ranges(
     }
 
     futs_res?;
-    info!("get object with ranges use: {:?}, ranges: {}", t.elapsed(), ranges.len());
+    info!("get object {} with ranges use: {:?}, ranges: {:?}", key, t.elapsed(), ranges);
     Ok(parts)
 }
 
@@ -892,8 +895,8 @@ struct Args {
     #[arg(short, long)]
     s3config_path: PathBuf,
 
-    /// 1GB
-    #[arg(short, long, default_value_t = 1073741824)]
+    /// sector size 1056896064
+    #[arg(short, long, default_value_t = 1056896064)]
     part_size: u64
 }
 
