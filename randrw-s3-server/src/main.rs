@@ -230,27 +230,15 @@ async fn put_zero_object_api(
     data_len_query: DataLenQuery,
     ctx: Arc<Context>,
 ) -> Response {
-    let buff = [0u8; 8192];
-    let stream = futures_util::stream::repeat_with(|| Ok(buff.as_slice()));
+    let obj = datastore::Object {
+        key: key.key,
+        total_size: data_len_query.data_len,
+        part_size: ctx.part_size,
+        parts_len: data_len_query.data_len /ctx.part_size
+    };
+    let _ = ctx.datastore.write().unwrap().put(obj);
 
-    let res = put_object(
-        &ctx,
-        key.key,
-        data_len_query.data_len,
-        stream
-    ).await;
-
-    match res {
-        Ok(_) => Response::new(Body::empty()),
-        Err(e) => {
-            let error = format!("{:?}", e);
-            error!("put_zero_object_api error: {}", error);
-
-            let mut resp = Response::new(Body::from(error));
-            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-            resp
-        }
-    }
+    Response::new(Body::empty())
 }
 
 async fn put_object_api(
@@ -291,7 +279,7 @@ async fn update_object(
     ctx: &Context,
     key: String,
     offset: u64,
-    mut content_len: u64,
+    content_len: u64,
     body: impl Stream<Item=Result<impl Buf, warp::Error>> + Unpin,
 ) -> Result<()> {
     let s3config = &ctx.s3config;
@@ -311,135 +299,18 @@ async fn update_object(
     let mut reader = StreamReader::new(body.map_err(|e| io::Error::new(io::ErrorKind::Other, e)));
     let mut buff = vec![0u8; part_size as usize];
 
-    let mut parts_num = offset / part_size;
+    let parts_num = offset / part_size;
     info!("Update object {:?} parts_num {:?} offset: {:?} content_len {:?}", key, parts_num, offset, content_len);
 
-    let is_exist = match {
-        ctx.s3client
-            .head_object()
-            .bucket(&s3config.bucket)
-            .key(format!("{}/{}", key, parts_num))
-            .send()
-            .await
-    } {
-        Ok(_) => true,
-        _ => false,
-    };
+    reader.read_exact(&mut buff[..content_len as usize]).await?;         
+    multipart_upload(
+        s3client,
+        &s3config.bucket,
+        &format!("{}/{}", key, parts_num),
+        Bytes::copy_from_slice(&buff),
+    )
+    .await?;
 
-    if !is_exist {
-        // 两种情况
-        // 1. content_len <= part_size
-        if content_len <= part_size {
-            reader.read_exact(&mut buff[..content_len as usize]).await?;
-            
-            multipart_upload(
-                s3client,
-                &s3config.bucket,
-                &format!("{}/{}", key, parts_num),
-                Bytes::copy_from_slice(&buff),
-            )
-            .await?;
-            return Ok(());
-        } else {
-            // 2. content_len > part_size
-            // 2.1 上传part_size大小的内容
-            while content_len > part_size {
-                reader.read_exact(&mut buff[..part_size as usize]).await?;
-                multipart_upload(
-                    s3client,
-                    &s3config.bucket,
-                    &format!("{}/{}", key, parts_num),
-                    Bytes::copy_from_slice(&buff),
-                )
-                .await?;
-                parts_num += 1;
-                content_len -= part_size;
-            }
-
-            // 2.2 上传多余的part
-            reader.read_exact(&mut buff[..content_len as usize]).await?;
-
-            multipart_upload(
-                s3client,
-                &s3config.bucket,
-                &format!("{}/{}", key, parts_num),
-                Bytes::copy_from_slice(&buff),
-            )
-            .await?;
-        }
-        return Ok(());
-    }
-    
-    // |..{....|......|
-    if offset % part_size != 0 {
-        let offset_in_part = (offset % part_size) as usize;
-        let range = format!("bytes={}-{}", 0, offset_in_part - 1);
-
-        let out = s3client.get_object()
-            .bucket(&s3config.bucket)
-            .key(format!("{}/{}", key, parts_num))
-            .range(range)
-            .send()
-            .await?;
-
-        let mut s3reader = out.body.into_async_read();
-        s3reader.read_exact(&mut buff[..offset_in_part]).await?;
-
-        reader.read_exact(&mut buff[offset_in_part..min(part_size as usize, offset_in_part + content_len as usize)]).await?;
-    } else {
-        reader.read_exact(&mut buff[..min(part_size as usize, content_len as usize)]).await?;
-    }
-
-    // |..{...}.|......|
-    if (offset + content_len) / part_size == offset / part_size {
-        let offset_in_part = ((offset + content_len) % part_size) as usize;
-        let range = format!("bytes={}-{}", offset_in_part, part_size - 1);
-
-        let out = s3client.get_object()
-            .bucket(&s3config.bucket)
-            .key(format!("{}/{}", key, parts_num))
-            .range(range)
-            .send()
-            .await?;
-
-        let mut s3reader = out.body.into_async_read();
-        s3reader.read_exact(&mut buff[offset_in_part..]).await?;
-
-        content_len = 0;
-    } else {
-        content_len -= part_size - (offset % part_size);
-    }
-
-    info!("Upload object 1: key {} {}", key, parts_num);
-    multipart_upload(s3client, &s3config.bucket, &format!("{}/{}", key, parts_num), Bytes::copy_from_slice(&buff)).await?;
-
-    parts_num += 1;
-
-    // |..{....|....}..|
-    while content_len > 0 {
-        let read_len = min(part_size, content_len);
-        reader.read_exact(&mut buff[..read_len as usize]).await?;
-
-        if read_len < part_size {
-            let range = format!("bytes={}-{}", read_len, part_size - 1);
-
-            let out = s3client.get_object()
-                .bucket(&s3config.bucket)
-                .key(format!("{}/{}", key, parts_num))
-                .range(range)
-                .send()
-                .await?;
-
-            let mut s3reader = out.body.into_async_read();
-            s3reader.read_exact(&mut buff[read_len as usize..]).await?;
-        }
-
-        info!("Upload object 2: key {} {}", key, parts_num);
-        multipart_upload(s3client, &s3config.bucket, &format!("{}/{}", key, parts_num), Bytes::copy_from_slice(&buff)).await?;
-
-        content_len -= read_len;
-        parts_num += 1;
-    }
     Ok(())
 }
 
